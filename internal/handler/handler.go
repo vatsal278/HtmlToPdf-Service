@@ -99,9 +99,10 @@ func (svc htmltopdfsvc) ConvertToPdf(w http.ResponseWriter, r *http.Request) {
 	}
 	var class model.Class
 	json.Unmarshal(data, &class)
-	resp := svc.logic.HtmlToPdf(v, class)
+	resp, b := svc.logic.HtmlToPdf(v, class)
 	w.Header().Set("Content-Disposition", "attachment; filename="+v+".pdf")
 	w.Header().Set("Content-Type", "application/pdf")
 	w.WriteHeader(http.StatusOK)
+	w.Write(b.Bytes())
 	response.ToJson(w, resp.Status, resp.Message, resp.Data)
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"github.com/PereRohit/util/log"
 	respModel "github.com/PereRohit/util/model"
 	"github.com/SebastiaanKlippert/go-wkhtmltopdf"
@@ -22,7 +23,7 @@ import (
 
 type HtmltopdfsvcLogicIer interface {
 	Ping(*model.PingRequest) *respModel.Response
-	HtmlToPdf(v string, class model.Class) *respModel.Response
+	HtmlToPdf(v string, class model.Class) (*respModel.Response, *wkhtmltopdf.PDFGenerator)
 	Upload(file multipart.File) *respModel.Response
 }
 
@@ -45,7 +46,7 @@ func (l htmltopdfsvcLogic) Ping(req *model.PingRequest) *respModel.Response {
 	}
 }
 
-func (l htmltopdfsvcLogic) HtmlToPdf(v string, class model.Class) *respModel.Response {
+func (l htmltopdfsvcLogic) HtmlToPdf(v string, class model.Class) (*respModel.Response, *wkhtmltopdf.PDFGenerator) {
 	// add your business logic here
 	var z map[string]interface{}
 	b, err := l.cacher.Get(v + ".html")
@@ -55,27 +56,27 @@ func (l htmltopdfsvcLogic) HtmlToPdf(v string, class model.Class) *respModel.Res
 			Status:  http.StatusInternalServerError,
 			Message: codes.GetErr(codes.ErrFetchingFile),
 			Data:    nil,
-		}
+		}, nil
 	}
 	err = json.NewDecoder(bytes.NewBuffer(b)).Decode(&z)
 	if err != nil {
-		log.Error("error unmarshaling JSON: %s", err)
+		log.Error("error unmarshaling JSON:" + err.Error())
 		return &respModel.Response{
 			Status:  http.StatusInternalServerError,
 			Message: codes.GetErr(codes.ErrFileParseFail),
 			Data:    nil,
-		}
+		}, nil
 	}
 	for i, p := range z["Pages"].([]interface{}) {
 		page := p.(map[string]interface{})
 		buf, err := base64.StdEncoding.DecodeString(page["Base64PageData"].(string))
 		if err != nil {
-			log.Error("error decoding base 64 input on page %d: %s", i, err)
+			log.Error("error decoding base 64 input on page" + fmt.Sprint(i) + err.Error())
 			return &respModel.Response{
 				Status:  http.StatusInternalServerError,
 				Message: codes.GetErr(codes.ErrReadFileFail),
 				Data:    nil,
-			}
+			}, nil
 		}
 		t, err := template.New(v).Parse(string(buf))
 		if err != nil {
@@ -84,7 +85,7 @@ func (l htmltopdfsvcLogic) HtmlToPdf(v string, class model.Class) *respModel.Res
 				Status:  http.StatusInternalServerError,
 				Message: codes.GetErr(codes.ErrFileParseFail),
 				Data:    nil,
-			}
+			}, nil
 		}
 		buffer := bytes.NewBuffer(nil)
 		err = t.Execute(buffer, class)
@@ -94,7 +95,7 @@ func (l htmltopdfsvcLogic) HtmlToPdf(v string, class model.Class) *respModel.Res
 				Status:  http.StatusInternalServerError,
 				Message: codes.GetErr(codes.ErrFileStoreFail),
 				Data:    nil,
-			}
+			}, nil
 		}
 		page["Base64PageData"] = base64.StdEncoding.EncodeToString(buffer.Bytes())
 	}
@@ -106,7 +107,7 @@ func (l htmltopdfsvcLogic) HtmlToPdf(v string, class model.Class) *respModel.Res
 			Status:  http.StatusInternalServerError,
 			Message: codes.GetErr(codes.ErrFileStoreFail),
 			Data:    nil,
-		}
+		}, nil
 	}
 	pdfgFromJSON, err := wkhtmltopdf.NewPDFGeneratorFromJSON(bytes.NewBuffer(buff.Bytes()))
 	if err != nil {
@@ -115,7 +116,7 @@ func (l htmltopdfsvcLogic) HtmlToPdf(v string, class model.Class) *respModel.Res
 			Status:  http.StatusInternalServerError,
 			Message: codes.GetErr(codes.ErrFileStoreFail),
 			Data:    nil,
-		}
+		}, nil
 	}
 	err = pdfgFromJSON.Create()
 	if err != nil {
@@ -124,13 +125,13 @@ func (l htmltopdfsvcLogic) HtmlToPdf(v string, class model.Class) *respModel.Res
 			Status:  http.StatusInternalServerError,
 			Message: codes.GetErr(codes.ErrFileStoreFail),
 			Data:    nil,
-		}
+		}, nil
 	}
 	return &respModel.Response{
 		Status:  http.StatusCreated,
 		Message: "SUCCESS",
 		Data:    nil,
-	}
+	}, pdfgFromJSON
 }
 func (l htmltopdfsvcLogic) Upload(file multipart.File) *respModel.Response {
 	fileBytes, err := ioutil.ReadAll(file)
