@@ -175,7 +175,6 @@ func (l htmltopdfsvcLogic) Upload(file multipart.File) *respModel.Response {
 			"id": u,
 		},
 	}
-
 }
 
 func (l htmltopdfsvcLogic) Replace(id string, file multipart.File) *respModel.Response {
