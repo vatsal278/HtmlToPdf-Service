@@ -13,6 +13,8 @@ const (
 	ErrFileConversionFail
 	ErrFileStoreFail
 	ErrFetchingFile
+	ErrIdNotfound
+	ErrKeyNotFound
 )
 
 var errCodes = map[errCode]string{
@@ -22,6 +24,8 @@ var errCodes = map[errCode]string{
 	ErrFileConversionFail: "failed to convert file",
 	ErrFileStoreFail:      "unable to store file",
 	ErrFetchingFile:       "failed to fetch file",
+	ErrIdNotfound:         "id not found",
+	ErrKeyNotFound:        "unable to find this Uuid",
 }
 
 func GetErr(code errCode) string {

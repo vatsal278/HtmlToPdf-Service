@@ -14,6 +14,7 @@ import (
 	"github.com/vatsal278/htmltopdfsvc/internal/config"
 	"github.com/vatsal278/htmltopdfsvc/internal/model"
 	"html/template"
+	"io"
 	"io/ioutil"
 	"mime/multipart"
 	"net/http"
@@ -23,8 +24,9 @@ import (
 
 type HtmltopdfsvcLogicIer interface {
 	Ping(*model.PingRequest) *respModel.Response
-	HtmlToPdf(v string, class model.Class) (*respModel.Response, *wkhtmltopdf.PDFGenerator)
+	HtmlToPdf(w io.Writer, req *model.GenerateReq) *respModel.Response
 	Upload(file multipart.File) *respModel.Response
+	Replace(id string, file multipart.File) *respModel.Response
 }
 
 type htmltopdfsvcLogic struct {
@@ -46,17 +48,17 @@ func (l htmltopdfsvcLogic) Ping(req *model.PingRequest) *respModel.Response {
 	}
 }
 
-func (l htmltopdfsvcLogic) HtmlToPdf(v string, class model.Class) (*respModel.Response, *wkhtmltopdf.PDFGenerator) {
+func (l htmltopdfsvcLogic) HtmlToPdf(w io.Writer, req *model.GenerateReq) *respModel.Response {
 	// add your business logic here
 	var z map[string]interface{}
-	b, err := l.cacher.Get(v + ".html")
+	b, err := l.cacher.Get(req.Id)
 	if err != nil {
 		log.Error(err)
 		return &respModel.Response{
 			Status:  http.StatusInternalServerError,
 			Message: codes.GetErr(codes.ErrFetchingFile),
 			Data:    nil,
-		}, nil
+		}
 	}
 	err = json.NewDecoder(bytes.NewBuffer(b)).Decode(&z)
 	if err != nil {
@@ -65,7 +67,7 @@ func (l htmltopdfsvcLogic) HtmlToPdf(v string, class model.Class) (*respModel.Re
 			Status:  http.StatusInternalServerError,
 			Message: codes.GetErr(codes.ErrFileParseFail),
 			Data:    nil,
-		}, nil
+		}
 	}
 	for i, p := range z["Pages"].([]interface{}) {
 		page := p.(map[string]interface{})
@@ -76,26 +78,26 @@ func (l htmltopdfsvcLogic) HtmlToPdf(v string, class model.Class) (*respModel.Re
 				Status:  http.StatusInternalServerError,
 				Message: codes.GetErr(codes.ErrReadFileFail),
 				Data:    nil,
-			}, nil
+			}
 		}
-		t, err := template.New(v).Parse(string(buf))
+		t, err := template.New(req.Id).Parse(string(buf))
 		if err != nil {
 			log.Error(err)
 			return &respModel.Response{
 				Status:  http.StatusInternalServerError,
 				Message: codes.GetErr(codes.ErrFileParseFail),
 				Data:    nil,
-			}, nil
+			}
 		}
 		buffer := bytes.NewBuffer(nil)
-		err = t.Execute(buffer, class)
+		err = t.Execute(buffer, req.Values)
 		if err != nil {
 			log.Error(err)
 			return &respModel.Response{
 				Status:  http.StatusInternalServerError,
 				Message: codes.GetErr(codes.ErrFileStoreFail),
 				Data:    nil,
-			}, nil
+			}
 		}
 		page["Base64PageData"] = base64.StdEncoding.EncodeToString(buffer.Bytes())
 	}
@@ -107,7 +109,7 @@ func (l htmltopdfsvcLogic) HtmlToPdf(v string, class model.Class) (*respModel.Re
 			Status:  http.StatusInternalServerError,
 			Message: codes.GetErr(codes.ErrFileStoreFail),
 			Data:    nil,
-		}, nil
+		}
 	}
 	pdfgFromJSON, err := wkhtmltopdf.NewPDFGeneratorFromJSON(bytes.NewBuffer(buff.Bytes()))
 	if err != nil {
@@ -116,22 +118,24 @@ func (l htmltopdfsvcLogic) HtmlToPdf(v string, class model.Class) (*respModel.Re
 			Status:  http.StatusInternalServerError,
 			Message: codes.GetErr(codes.ErrFileStoreFail),
 			Data:    nil,
-		}, nil
+		}
 	}
+	pdfgFromJSON.SetOutput(w)
 	err = pdfgFromJSON.Create()
+
 	if err != nil {
 		log.Error(err)
 		return &respModel.Response{
 			Status:  http.StatusInternalServerError,
 			Message: codes.GetErr(codes.ErrFileStoreFail),
 			Data:    nil,
-		}, nil
+		}
 	}
 	return &respModel.Response{
 		Status:  http.StatusCreated,
 		Message: "SUCCESS",
 		Data:    nil,
-	}, pdfgFromJSON
+	}
 }
 func (l htmltopdfsvcLogic) Upload(file multipart.File) *respModel.Response {
 	fileBytes, err := ioutil.ReadAll(file)
@@ -172,4 +176,53 @@ func (l htmltopdfsvcLogic) Upload(file multipart.File) *respModel.Response {
 		},
 	}
 
+}
+
+func (l htmltopdfsvcLogic) Replace(id string, file multipart.File) *respModel.Response {
+	_, err := l.cacher.Get(id)
+	if err != nil {
+		log.Error(err)
+		return &respModel.Response{
+			Status:  http.StatusInternalServerError,
+			Message: codes.GetErr(codes.ErrKeyNotFound),
+			Data:    nil,
+		}
+	}
+	fileBytes, err := ioutil.ReadAll(file)
+	if err != nil {
+		log.Error(err)
+		return &respModel.Response{
+			Status:  http.StatusInternalServerError,
+			Message: codes.GetErr(codes.ErrReadFileFail),
+			Data:    nil,
+		}
+	}
+	pdfg := wkhtmltopdf.NewPDFPreparer()
+	pdfg.AddPage(wkhtmltopdf.NewPageReader(bytes.NewReader(fileBytes)))
+	jb, err := pdfg.ToJSON()
+	if err != nil {
+		log.Error(err)
+		return &respModel.Response{
+			Status:  http.StatusInternalServerError,
+			Message: codes.GetErr(codes.ErrFileConversionFail),
+			Data:    nil,
+		}
+	}
+
+	err = l.cacher.Set(id, jb, 0)
+	if err != nil {
+		log.Error(err)
+		return &respModel.Response{
+			Status:  http.StatusInternalServerError,
+			Message: codes.GetErr(codes.ErrFileStoreFail),
+			Data:    nil,
+		}
+	}
+	return &respModel.Response{
+		Status:  http.StatusCreated,
+		Message: "SUCCESS",
+		Data: map[string]interface{}{
+			"id": id,
+		},
+	}
 }

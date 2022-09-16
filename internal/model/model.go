@@ -11,8 +11,7 @@ type Student struct {
 }
 type Class []Student
 
-type Response struct {
-	Status  int    `json:"status"`
-	Message string `json:"message"`
-	Data    interface{}
+type GenerateReq struct {
+	Values map[string]interface{} `json:"values"`
+	Id     string                 `json:"-"`
 }

@@ -34,7 +34,8 @@ func attachHtmltopdfsvcRoutes(m *mux.Router, c *config.AppContainer) *mux.Router
 
 	m.HandleFunc("/ping", svc.Ping).Methods(http.MethodPost)
 	m.HandleFunc("/register", svc.Upload).Methods(http.MethodPost)
-	m.HandleFunc("/generate", svc.ConvertToPdf).Methods(http.MethodPost)
+	m.HandleFunc("/generate/{id}", svc.ConvertToPdf).Methods(http.MethodPost)
+	m.HandleFunc("/register/{id}", svc.ReplaceHtml).Methods(http.MethodPut)
 
 	return m
 }
